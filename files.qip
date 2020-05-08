@@ -8,3 +8,5 @@ set_global_assignment -name VHDL_FILE gen_ram.vhd
 set_global_assignment -name VHDL_FILE burnin_rubber_sound.vhd
 set_global_assignment -name VHDL_FILE burnin_rubber.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE "Arcade-BurningRubber.sv"
+set_global_assignment -name VERILOG_FILE joydb9md.v
+set_global_assignment -name VERILOG_FILE joydb15.v

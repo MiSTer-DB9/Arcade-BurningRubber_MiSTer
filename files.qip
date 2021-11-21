@@ -7,6 +7,8 @@ set_global_assignment -name VHDL_FILE rtl/dpram.vhd
 set_global_assignment -name VHDL_FILE rtl/gen_ram.vhd
 set_global_assignment -name VHDL_FILE rtl/burnin_rubber_sound.vhd
 set_global_assignment -name VHDL_FILE rtl/burnin_rubber.vhd
+set_global_assignment -name VERILOG_FILE "rtl/pause.v"
+set_global_assignment -name VERILOG_FILE "rtl/hiscore.v"
 set_global_assignment -name SYSTEMVERILOG_FILE "Arcade-BurningRubber.sv"
 set_global_assignment -name VERILOG_FILE joydb9md.v
 set_global_assignment -name VERILOG_FILE joydb15.v

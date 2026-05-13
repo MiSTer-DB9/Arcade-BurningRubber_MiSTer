@@ -57,6 +57,8 @@ module emu
 	input  [11:0] HDMI_WIDTH,
 	input  [11:0] HDMI_HEIGHT,
 	output        HDMI_FREEZE,
+	output        HDMI_BLACKOUT,
+	output        HDMI_BOB_DEINT,
 
 `ifdef MISTER_FB
 	// Use framebuffer in DDRAM
@@ -194,6 +196,8 @@ assign VGA_SCALER = 0;
 assign VGA_DISABLE = 0;
 assign HDMI_FREEZE = 0;
 assign FB_FORCE_BLANK = 0;
+assign HDMI_BLACKOUT = 0;
+assign HDMI_BOB_DEINT = 0;
 
 assign AUDIO_S = 0;
 assign AUDIO_MIX = 0;
@@ -263,6 +267,7 @@ localparam CONF_STR = {
 	"A.BRUBBR;;",
 	"H0OJK,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"H0O2,Orientation,Vert,Horz;",
+	"O1,Flip,Off,On;",
 	"O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"h1ON,Autosave Hiscores,Off,On;",
 	"-;",
@@ -447,6 +452,7 @@ wire [1:0] b;
 
 wire no_rotate = status[2] | direct_video;
 wire rotate_ccw = 0;
+wire core_flip = status[1];
 wire flip = 0;
 wire video_rotated;
 
@@ -494,7 +500,7 @@ burnin_rubber burnin_rubber
 	.video_hblank(hblank),
 
 	.audio_out(audio),
-
+	.flip(core_flip),
 	.start2(m_start2),
 	.start1(m_start1),
 	.coin1(m_coin_1),

@@ -27,17 +27,12 @@
 // VDNUM 1..10
 // BLKSZ 0..7: 0 = 128, 1 = 256, 2 = 512(default), .. 7 = 16384
 //
-module hps_io #(parameter CONF_STR, CONF_STR_BRAM=1, PS2DIV=0, WIDE=0, VDNUM=1, BLKSZ=2, PS2WE=0)
+module hps_io #(parameter CONF_STR, CONF_STR_BRAM=0, PS2DIV=0, WIDE=0, VDNUM=1, BLKSZ=2, PS2WE=0, STRLEN=$size(CONF_STR)>>3)
 (
 	input             clk_sys,
 	inout      [48:0] HPS_BUS,
 	// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: joy_raw input
 	input      [15:0] joy_raw,
-	// [MiSTer-DB9 END]
-	// [MiSTer-DB9 BEGIN] - DB9 programmable-remap selector stream (UIO_DB9_MAP 0xFD)
-	output            db9_remap_cmd,
-	output      [5:0] db9_remap_byte_cnt,
-	output     [15:0] db9_remap_din,
 	// [MiSTer-DB9 END]
 	// buttons up to 32
 	// [MiSTer-DB9-Pro BEGIN] - key gate v1.5 (per-customer SipHash MAC; UIO_DB9_KEY 0xFE)
@@ -242,7 +237,6 @@ video_calc video_calc
 
 /////////////////////////////////////////////////////////
 
-localparam STRLEN = $size(CONF_STR)>>3;
 localparam MAX_W = $clog2((64 > (STRLEN+2)) ? 64 : (STRLEN+2))-1;
 
 wire [7:0] conf_byte;
@@ -741,12 +735,6 @@ db9_key_gate #(
 );
 // [MiSTer-DB9-Pro END]
 
-
-// [MiSTer-DB9 BEGIN] - DB9 programmable-remap selector stream drivers
-assign db9_remap_cmd      = (uio_block.cmd == 16'hFD);
-assign db9_remap_byte_cnt = byte_cnt[5:0];
-assign db9_remap_din      = io_din;
-// [MiSTer-DB9 END]
 endmodule
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -1070,8 +1058,15 @@ module confstr_rom #(parameter CONF_STR, STRLEN)
 	output reg [7:0] conf_byte
 );
 
-wire [7:0] rom[STRLEN];
-initial for(int i = 0; i < STRLEN; i++) rom[i] = CONF_STR[((STRLEN-i)*8)-1 -:8];
+reg [7:0] rom[STRLEN];
+
+initial begin
+	if( CONF_STR=="" )
+		$readmemh("cfgstr.hex",rom);
+	else
+		for(int i = 0; i < STRLEN; i++) rom[i] = CONF_STR[((STRLEN-i)*8)-1 -:8];
+end
+
 always @ (posedge clk_sys) conf_byte <= rom[conf_addr];
 
 endmodule

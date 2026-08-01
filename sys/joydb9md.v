@@ -8,35 +8,11 @@ module joy_db9md(
     output joy_mdsel,
     output joy_split,
     output [11:0] joystick1,
-    output [11:0] joystick2,
-    // Protocol-level 6-button pad detect. The internal joy*_6btn regs reset
-    // each scan at state 2 and get set at state 5 iff the pad responds with
-    // joy_in[3:0]==0 (the documented 6-btn handshake). Sampling them raw
-    // from outside catches the ~20 us state-2..5 window where the flag is
-    // transiently 0 even when a 6-btn pad is connected. These outputs latch
-    // the stable value at state 6 instead so consumers see a clean per-scan
-    // (~2.5 ms) flag — no glitch, no sticky bias, automatically clears when
-    // a 6-btn pad is unplugged. Default 0 at reset (cold-boot safe).
-    output joy1_is_6btn,
-    output joy2_is_6btn
+    output [11:0] joystick2
 );
 
-// Scan length in d7_fall ticks (5.12 us each @ 50 MHz). States 0..6 do the
-// active 6-btn probe; the remaining ticks hold joyMDsel high (idle). A real
-// 6-button pad only resets its internal cycle counter when SEL/TH is held high
-// longer than its internal timeout. The MegaDrive SNAC pad_io.sv models that as
-// ~1.624 ms, but field controllers run longer: a real pad flickered at the
-// 1.93 ms idle that SCAN_LEN=384 yields @ 50 MHz, yet was steady at the
-// 48-MHz-era 2.01 ms idle (a 50 MHz tick is 5.12 us vs 48 MHz's 5.33 us, so the
-// same count gives a shorter idle). SCAN_LEN=495 -> ~2.53 ms scan, ~2.50 ms idle,
-// comfortably above real-pad timeouts so the pad counter resets before every scan
-// and the state-5 handshake read (joy_in[3:0]==0) is deterministic. A shorter
-// idle let long-timeout pads drift out of phase -> the 6-btn flag flickered
-// scan-to-scan on some controllers.
-localparam [8:0] SCAN_LEN = 9'd495;
-reg [8:0] state = 9'd0;
+reg [7:0]state = 8'd0;
 reg joy1_6btn = 1'b0, joy2_6btn = 1'b0;
-reg joy1_6btn_lat = 1'b0, joy2_6btn_lat = 1'b0;
 reg [11:0] joyMDdat1 = 12'hFFF, joyMDdat2 = 12'hFFF;
 reg [5:0] joy1_in, joy2_in;
 reg joyMDsel, joySEL = 1'b0;
@@ -46,27 +22,25 @@ reg joySplit = 1'b1;
 // button on a 3-button Megadrive pad. Gated by per-scan classification
 // (MD-not-MS AND not 6-button) and debounced; Start and B are consumed
 // while active so the game does not see Pause+B alongside Mode.
-localparam [7:0] CHORD_DEBOUNCE = 8'd41;  // ~104 ms at ~2.53 ms/scan
+localparam [7:0] CHORD_DEBOUNCE = 8'd80;  // ~105 ms at ~1.31 ms/scan
 reg joy1_md_thisscan = 1'b0, joy2_md_thisscan = 1'b0;
 reg [7:0] joy1_chord_cnt = 8'd0, joy2_chord_cnt = 8'd0;
 reg joy1_mode_inject = 1'b0, joy2_mode_inject = 1'b0;
 
+reg [7:0] delay = 8'd0;
+
+always @(posedge clk) begin
+    delay <= delay + 1'd1;
+end
+
 // Single-cycle ticks replace the legacy `posedge|negedge delay[N]` derived
-// clocks. `delay` free-runs on every clk; the tick conditions fire at the
+// clocks. `delay` cycles 0..255 on every clk; the tick conditions fire at the
 // same counter values where the original bit-edges occurred:
 //   delay[5] 0->1 (was `posedge delay[5]`)  : delay[5:0] == 32
 //   delay[5] 1->0 (was `negedge delay[5]`)  : delay[5:0] == 0
 //   delay[7] 1->0 (was `negedge delay[7]`)  : delay      == 0
 // Bodies execute one clk cycle after the original derived edge — negligible
 // vs the /64 (~1.28 us) and /256 (~5.12 us) protocol intervals at 50 MHz.
-//
-// joydb is clocked at a fixed 40-50 MHz (CLK_JOY on the standalone DB9 cores;
-// clk_joy=CLK_50M on jt cores), so one baseline timing path covers every core --
-// no per-clock rescale. (The earlier JTFRAME_SDRAM96 delay-widen was removed once
-// jt cores moved joydb off the 24/48/96 MHz clk_sys onto a fixed CLK_50M, matching
-// the reference cores; clk_sys rescaling could not fix the octopod 2P-MUX demux.)
-reg [7:0] delay = 8'd0;
-always @(posedge clk) delay <= delay + 1'd1;
 wire d5_rise = (delay[5:0] == 6'd32);
 wire d5_fall = (delay[5:0] == 6'd0);
 wire d7_fall = (delay      == 8'd0);
@@ -87,18 +61,17 @@ always @(posedge clk) begin
 
     // Joystick Management
     if (d7_fall) begin
-        if (state == SCAN_LEN - 1'd1) state <= 9'd0;
-        else                          state <= state + 1'd1;
+        state <= state + 1;
         case (state)        //-- joy_s format MXYZ SACB UDLR
-            9'd0: begin
+            8'd0: begin
                 joyMDsel <= 1'b0;
             end
 
-            9'd1: begin
+            8'd1: begin
                 joyMDsel <= 1'b1;
             end
 
-            9'd2: begin
+            8'd2: begin
                 joyMDdat1[5:0] <= joy1_in[5:0]; //-- CBUDLR
                 joyMDdat2[5:0] <= joy2_in[5:0]; //-- CBUDLR
                 joyMDsel <= 1'b0;
@@ -108,7 +81,7 @@ always @(posedge clk) begin
                 joy2_md_thisscan <= 1'b0;
             end
 
-            9'd3: begin // Si derecha e Izda es 0 es un mando de megadrive
+            8'd3: begin // Si derecha e Izda es 0 es un mando de megadrive
                 if (joy1_in[1:0] == 2'b00) begin
                     joyMDdat1[7:6] <= joy1_in[5:4]; // -- Start, A
                     joy1_md_thisscan <= 1'b1;
@@ -126,11 +99,11 @@ always @(posedge clk) begin
                 joyMDsel <= 1'b1;
             end
 
-            9'd4: begin
+            8'd4: begin
                 joyMDsel <= 1'b0;
             end
 
-            9'd5: begin
+            8'd5: begin
                 if (joy1_in[3:0] == 4'b000) begin
                     joy1_6btn <= 1'b1; // -- It's a six button
                 end
@@ -140,19 +113,13 @@ always @(posedge clk) begin
                 joyMDsel <= 1'b1;
             end
 
-            9'd6: begin
+            8'd6: begin
                 if (joy1_6btn == 1'b1) begin
                     joyMDdat1[11:8] <= joy1_in[4:0]; // -- Mode, X, Y e Z
                 end
                 if (joy2_6btn == 1'b1) begin
                     joyMDdat2[11:8] <= joy2_in[4:0]; // -- Mode, X, Y e Z
                 end
-                // Latch the per-scan 6-btn flag here (after state 5 has set it).
-                // Output stays steady from this point until state 6 of the next
-                // scan ~1.3 ms later, so external consumers never see the
-                // state-2 reset transient.
-                joy1_6btn_lat <= joy1_6btn;
-                joy2_6btn_lat <= joy2_6btn;
                 joyMDsel <= 1'b0;
 
                 // Start (joyMDdat[7]) and B (joyMDdat[4]) are active-low here.
@@ -196,8 +163,5 @@ assign joystick2 = joy2_mode_inject
 
 assign joy_mdsel = joyMDsel;
 assign joy_split = joySplit;
-
-assign joy1_is_6btn = joy1_6btn_lat;
-assign joy2_is_6btn = joy2_6btn_lat;
 
 endmodule

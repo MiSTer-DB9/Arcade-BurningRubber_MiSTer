@@ -20,16 +20,13 @@ reg [15:0] joy1 = 16'hFFFF, joy2  = 16'hFFFF;
 reg joy_renew = 1'b1;
 reg [4:0] joy_count = 5'd0;
 
-// joydb is clocked at a fixed 40-50 MHz (CLK_JOY / clk_joy=CLK_50M on jt cores),
-// so the /16 strobe keeps JOY_CLK at the spec ~3 MHz for every core. (The earlier
-// JTFRAME_SDRAM96 /32 path for a 96 MHz clk_sys was removed once jt cores moved
-// joydb onto a fixed CLK_50M.)
 assign JOY_CLK = JCLOCKS[3]; // 3Mhz, drives the splitter's external clock pin
+assign JOY_LOAD = joy_renew;
+
 // Tick fires once per /16 period — the cycle JCLOCKS[3] first becomes 1, i.e.
 // the same instant `posedge JOY_CLK` was triggering before. Bodies execute one
 // clk cycle later (~20 ns at 50 MHz, vs the 333 ns DB15 bit period).
 wire joy_tick = (JCLOCKS[3:0] == 4'b1000);
-assign JOY_LOAD = joy_renew;
 
 always @(posedge clk) if (joy_tick) begin
     joy_renew <= (joy_count != 5'd0);

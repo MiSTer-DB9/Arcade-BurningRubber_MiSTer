@@ -225,9 +225,32 @@ wire  [15:0] joydb_1, joydb_2;
 wire         joydb_1ena, joydb_2ena;
 wire  [15:0] joy_raw_payload;
 
+// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: probe-gating wires
+// SNAC cores: replace 1'b0 with the core's SNAC enable expression so SNAC
+// preempts the joydb wrapper on shared USER_IO pins. Default 1'b0 is no-op.
+wire         snac_active     = 1'b0;
+// MT32-pi probe-suppression gate. Auto-detected from MT32 signals declared
+// elsewhere in this file (mt32_disable / mt32_use / mt32_on_primary). Hand-edit
+// if the heuristic missed your core's gate expression. Suppresses the OSD-open
+// autodetect probe so it doesn't read the RPi's I2C master traffic as a ghost
+// Saturn signature. See the fork hazard notes.
+wire         mt32_primary_active = 1'b0;
+// [MiSTer-DB9 END]
+// [MiSTer-DB9 BEGIN] - DB9 programmable-remap matrix wires
+// joydb_*_mapped = MiSTer-standard joystick words (consumed in Layer B);
+// db9_remap_* = 0xFD selector stream driven by the hps_io instance.
+wire  [15:0] joydb_1_mapped, joydb_2_mapped;
+wire         db9_remap_cmd;
+wire   [5:0] db9_remap_byte_cnt;
+wire  [15:0] db9_remap_din;
+// [MiSTer-DB9 END]
 joydb joydb (
   .clk             ( CLK_JOY         ),
+  .clk_sys         ( clk_sys            ),
   .USER_IN         ( USER_IN         ),
+  .OSD_STATUS          ( OSD_STATUS          ),
+  .snac_active         ( snac_active         ),
+  .mt32_primary_active ( mt32_primary_active ),
   .joy_type        ( joy_type        ),
   .joy_2p          ( joy_2p          ),
   .saturn_unlocked ( saturn_unlocked ),
@@ -238,6 +261,11 @@ joydb joydb (
   .joydb_2         ( joydb_2         ),
   .joydb_1ena      ( joydb_1ena      ),
   .joydb_2ena      ( joydb_2ena      ),
+  .remap_cmd       ( db9_remap_cmd      ),
+  .remap_byte_cnt  ( db9_remap_byte_cnt ),
+  .remap_din       ( db9_remap_din      ),
+  .joydb_1_mapped  ( joydb_1_mapped     ),
+  .joydb_2_mapped  ( joydb_2_mapped     ),
   .joy_raw         ( joy_raw_payload )
 );
 
@@ -334,10 +362,10 @@ always @(posedge clk_sys) if (ioctl_wr && (ioctl_index==254) && !ioctl_addr[24:1
 
 // CO S2 S1 F1 U D L R 
 // [MiSTer-DB9-Pro BEGIN] - DB controllers muted while OSD is open
-wire [31:0] joystick_0 = joydb_1ena ? (OSD_STATUS ? 32'b0 : {joydb_1[11],joydb_1[9],joydb_1[10],joydb_1[4:0]}) : joystick_0_USB;
+wire [31:0] joystick_0 = joydb_1ena ? (OSD_STATUS ? 32'b0 : joydb_1_mapped[8:0]) : joystick_0_USB;
 // [MiSTer-DB9-Pro END]
 // [MiSTer-DB9-Pro BEGIN] - DB controllers muted while OSD is open
-wire [31:0] joystick_1 = joydb_2ena ? (OSD_STATUS ? 32'b0 : {joydb_2[11],joydb_2[10],joydb_2[9],joydb_2[4:0]}) : joydb_1ena ? joystick_0_USB : joystick_1_USB;
+wire [31:0] joystick_1 = joydb_2ena ? (OSD_STATUS ? 32'b0 : joydb_2_mapped[8:0]) : joydb_1ena ? joystick_0_USB : joystick_1_USB;
 // [MiSTer-DB9-Pro END]
 
 
@@ -405,6 +433,10 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.joystick_1(joystick_1_USB),
 	// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: joy_raw
 	.joy_raw(OSD_STATUS ? joy_raw_payload : 16'b0),
+	// programmable remap matrix selector load (UIO_DB9_MAP 0xFD)
+	.db9_remap_cmd(db9_remap_cmd),
+	.db9_remap_byte_cnt(db9_remap_byte_cnt),
+	.db9_remap_din(db9_remap_din),
 	// [MiSTer-DB9 END]
 	// [MiSTer-DB9-Pro BEGIN] - Saturn key gate
 	.saturn_unlocked(saturn_unlocked)
